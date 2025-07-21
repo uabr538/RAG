@@ -14,29 +14,49 @@ from langchain.chains import RetrievalQA
 st.set_page_config(page_title="RAG App (Cloud Friendly)", layout="centered")
 st.title("📄 Ask Your Files (RAG App - Streamlit Cloud)")
 
-openai_api_key = st.secrets["OPENAI_API_KEY"]
+# Check for API key
+try:
+    openai_api_key = st.secrets["OPENAI_API_KEY"]
+    os.environ["OPENAI_API_KEY"] = openai_api_key
+except KeyError:
+    st.error("OpenAI API key not found. Please configure it in Streamlit Cloud secrets.")
+    st.stop()
 
+# File uploader
 uploaded_files = st.file_uploader("Upload PDFs, DOCX, or Excel files", type=["pdf", "docx", "xlsx"], accept_multiple_files=True)
 
 def load_pdf(path):
-    text = ""
-    with fitz.open(path) as doc:
-        for page in doc:
-            text += page.get_text()
-    return text
+    try:
+        text = ""
+        with fitz.open(path) as doc:
+            for page in doc:
+                text += page.get_text()
+        return text
+    except Exception as e:
+        st.warning(f"Error reading PDF: {e}")
+        return None
 
 def load_docx(path):
-    doc = docx.Document(path)
-    return "\n".join([p.text for p in doc.paragraphs])
+    try:
+        doc = docx.Document(path)
+        return "\n".join([p.text for p in doc.paragraphs if p.text])
+    except Exception as e:
+        st.warning(f"Error reading DOCX: {e}")
+        return None
 
-docs = []
+def load_excel(path):
+    try:
+        df = pd.read_excel(path)
+        return df.to_string()
+    except Exception as e:
+        st.warning(f"Error reading Excel: {e}")
+        return None
 
 if uploaded_files:
-    os.environ["OPENAI_API_KEY"] = openai_api_key
-
+    docs = []
     for f in uploaded_files:
-        suffix = f.name.split(".")[-1]
-        with NamedTemporaryFile(delete=False, suffix="." + suffix) as tmp:
+        suffix = f.name.split(".")[-1].lower()
+        with NamedTemporaryFile(delete=False, suffix=f".{suffix}") as tmp:
             tmp.write(f.read())
             tmp_path = tmp.name
 
@@ -46,34 +66,50 @@ if uploaded_files:
             elif suffix == "docx":
                 content = load_docx(tmp_path)
             elif suffix == "xlsx":
-                df = pd.read_excel(tmp_path)
-                content = df.to_string()
+                content = load_excel(tmp_path)
             else:
                 st.warning(f"Unsupported file type: {suffix}")
                 continue
 
-            docs.append(Document(page_content=content, metadata={"source": f.name}))
-        except Exception as e:
-            st.warning(f"Error reading {f.name}: {e}")
+            if content:
+                docs.append(Document(page_content=content, metadata={"source": f.name}))
         finally:
-            os.unlink(tmp_path)  # Clean up temporary file
+            try:
+                os.unlink(tmp_path)  # Clean up temporary file
+            except Exception as e:
+                st.warning(f"Error deleting temporary file {tmp_path}: {e}")
 
-    splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
-    split_docs = splitter.split_documents(docs)
+    if docs:
+        question = st.text_input("Ask a question about your documents:")
+        if question:
+            with st.spinner("Processing documents and generating answer..."):
+                try:
+                    # Initialize text splitter
+                    splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
+                    split_docs = splitter.split_documents(docs)
 
-    embedding_model = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-    db = Chroma.from_documents(split_docs, embedding_model)
-    retriever = db.as_retriever()
+                    # Initialize embedding model and vector store
+                    embedding_model = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+                    db = Chroma.from_documents(split_docs, embedding_model, persist_directory=None)
+                    retriever = db.as_retriever(search_kwargs={"k": 4})
 
-    qa_chain = RetrievalQA.from_chain_type(
-        llm=ChatOpenAI(temperature=0),
-        retriever=retriever
-    )
+                    # Initialize QA chain
+                    qa_chain = RetrievalQA.from_chain_type(
+                        llm=ChatOpenAI(temperature=0, model_name="gpt-3.5-turbo"),
+                        retriever=retriever,
+                        chain_type="stuff"
+                    )
 
-    question = st.text_input("Ask a question about your documents:")
+                    # Run query
+                    answer = qa_chain.run(question)
+                    st.markdown("**Answer:**")
+                    st.write(answer)
 
-    if question:
-        with st.spinner("Searching your documents..."):
-            answer = qa_chain.run(question)
-            st.markdown("**Answer:**")
-            st.write(answer)
+                    # Clean up Chroma to free memory
+                    db.delete_collection()
+                except Exception as e:
+                    st.error(f"Error processing question: {e}")
+    else:
+        st.warning("No valid documents were processed. Please check your files.")
+else:
+    st.info("Please upload files to start.")
