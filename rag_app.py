@@ -1,6 +1,7 @@
 import os
 import streamlit as st
-from langchain.document_loaders import UnstructuredFileLoader
+from tempfile import NamedTemporaryFile
+from langchain.document_loaders import PyMuPDFLoader, Docx2txtLoader, UnstructuredExcelLoader
 from langchain.embeddings import HuggingFaceEmbeddings
 from langchain.vectorstores import Chroma
 from langchain.text_splitter import CharacterTextSplitter
@@ -19,7 +20,21 @@ if uploaded_files and openai_api_key:
 
     docs = []
     for f in uploaded_files:
-        loader = UnstructuredFileLoader(f)
+        suffix = f.name.split(".")[-1]
+        with NamedTemporaryFile(delete=False, suffix="." + suffix) as tmp:
+            tmp.write(f.read())
+            tmp_path = tmp.name
+
+        if suffix == "pdf":
+            loader = PyMuPDFLoader(tmp_path)
+        elif suffix == "docx":
+            loader = Docx2txtLoader(tmp_path)
+        elif suffix == "xlsx":
+            loader = UnstructuredExcelLoader(tmp_path)
+        else:
+            st.warning(f"Unsupported file type: {suffix}")
+            continue
+
         docs.extend(loader.load())
 
     splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
