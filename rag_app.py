@@ -1,7 +1,7 @@
 import os
 import streamlit as st
 from tempfile import NamedTemporaryFile
-import fitz  # PyMuPDF
+import pdfplumber
 import docx
 import pandas as pd
 from langchain.schema import Document
@@ -28,9 +28,9 @@ uploaded_files = st.file_uploader("Upload PDFs, DOCX, or Excel files", type=["pd
 def load_pdf(path):
     try:
         text = ""
-        with fitz.open(path) as doc:
-            for page in doc:
-                text += page.get_text()
+        with pdfplumber.open(path) as pdf:
+            for page in pdf.pages:
+                text += page.extract_text() or ""
         return text
     except Exception as e:
         st.warning(f"Error reading PDF: {e}")
