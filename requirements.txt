@@ -3,6 +3,7 @@ langchain
 chromadb
 sentence-transformers
 openai
-unstructured
-python-docx
+pymupdf
+docx2txt
 pandas
+lxml
