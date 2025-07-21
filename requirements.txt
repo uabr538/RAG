@@ -1,9 +1,0 @@
-streamlit
-langchain
-chromadb
-sentence-transformers
-openai
-pymupdf
-docx2txt
-pandas
-lxml
