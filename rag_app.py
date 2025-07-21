@@ -5,7 +5,7 @@ import fitz  # PyMuPDF
 import docx
 import pandas as pd
 from langchain.schema import Document
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_openai import OpenAIEmbeddings
 from langchain.vectorstores import Chroma
 from langchain.text_splitter import CharacterTextSplitter
 from langchain.chat_models import ChatOpenAI
@@ -89,7 +89,7 @@ if uploaded_files:
                     split_docs = splitter.split_documents(docs)
 
                     # Initialize embedding model and vector store
-                    embedding_model = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+                    embedding_model = OpenAIEmbeddings(model="text-embedding-ada-002")
                     db = Chroma.from_documents(split_docs, embedding_model, persist_directory=None)
                     retriever = db.as_retriever(search_kwargs={"k": 4})
 
